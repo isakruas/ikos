@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Iki, the ikOS mascot: an ant">
+  <title>Iki - the ikOS mascot: an ant</title>
+
+  <!-- legs (6) and antennae -->
+  <g fill="none" stroke="#a9543c" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <!-- right legs -->
+    <polyline points="146,92 182,82 198,96"/>
+    <polyline points="148,106 188,108 202,128"/>
+    <polyline points="146,120 184,136 194,158"/>
+    <!-- left legs -->
+    <polyline points="110,92 74,82 58,96"/>
+    <polyline points="108,106 68,108 54,128"/>
+    <polyline points="110,120 72,136 62,158"/>
+    <!-- antennae -->
+    <path d="M120 44 Q108 22 92 22"/>
+    <path d="M136 44 Q148 22 164 22"/>
+  </g>
+
+  <!-- body: head, neck, thorax, petiole, abdomen -->
+  <g fill="#a9543c">
+    <ellipse cx="128" cy="56"  rx="24" ry="21"/>
+    <circle  cx="128" cy="82"  r="7"/>
+    <ellipse cx="128" cy="106" rx="21" ry="25"/>
+    <circle  cx="128" cy="134" r="8"/>
+    <ellipse cx="128" cy="180" rx="35" ry="45"/>
+  </g>
+
+  <!-- eyes -->
+  <circle cx="117" cy="52" r="4" fill="#1f1410"/>
+  <circle cx="139" cy="52" r="4" fill="#1f1410"/>
+</svg>

@@ -1,0 +1,10 @@
+# Compiled kernel images and simulator output
+build/
+out.hex
+*.hex
+
+# Rust build artifacts (test harness)
+target/
+
+# Docs build output
+docs/build/

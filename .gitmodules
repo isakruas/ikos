@@ -1,0 +1,3 @@
+[submodule "ikide"]
+	path = tools/ikide
+	url = https://github.com/isakruas/ikide
