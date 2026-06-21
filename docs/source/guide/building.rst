@@ -25,13 +25,19 @@ From the ikOS directory, everything runs through ``make``:
 
    make build            # compile to build/boot.hex
    make run              # compile and simulate (LIMIT=N overrides the cap)
-   make test             # run the end-to-end shell test harness
+   make test             # run the Rhai test suite (tests/*.rhai) via the IDE runner
    make docs             # build this manual
 
 ``make`` invokes the submodule's ``ik8b`` with ``IK8B_STD_PATH`` set so the
 ``import kernel/...`` paths and the standard library resolve, and writes the
 image to ``build/boot.hex``. ``run`` additionally simulates the image in the
 ik8b/ik8bvm simulator.
+
+``make test`` builds the IDE's headless test runner from the submodule and runs
+every ``tests/*.rhai`` suite through it (the same engine as IKIDE's
+*Run → Run Tests*). The suite compiles ``boot.ik`` in-process, drives the shell
+over the virtual UART and asserts on its replies, so no prior ``make build`` is
+needed; the command exits non-zero on any failure.
 
 Drive the shell over the UART at **9600 baud** (8N1). In the IKIDE breadboard,
 the UART tab speaks to the running image directly.

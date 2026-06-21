@@ -28,10 +28,11 @@ timer block there.
 ## Build & run
 
 ```sh
+git submodule update --init --recursive
 make toolchain        # build the ik8b compiler in the submodule (once, after clone)
 make build            # compile to build/boot.hex
 make run              # compile and simulate
-make test             # run the end-to-end shell test harness
+make test             # run the Rhai test suite (tests/*.rhai) via the IDE runner
 ```
 
 Run from this directory so the `import` paths resolve. Drive the shell over the
