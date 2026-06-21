@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
-target atmega328p
+target atmega32
 
 import std/uart
 import std/conv
@@ -24,6 +24,7 @@ import std/gpio
 import std/spi
 import std/twi
 import std/adc
+import std/wdt
 import config
 import kernel/memory
 import arch/cpu
@@ -40,6 +41,13 @@ import shell/commands
 import shell/shell
 
 @main {
+    # Disable the watchdog FIRST. The bootloader/fuses can leave it running and
+    # the sim doesn't model it, so it only resets in a loop on real silicon.
+    # WDE is forced while WDRF is set, so clear the WDT reset flag first
+    # (%WDT_STATUS_REG = MCUCSR on classic AVR), then disable via the std helper.
+    %WDT_STATUS_REG & 0xF7 -> %WDT_STATUS_REG
+    @wdt_disable()
+
     @uart_init(UART_UBRR)
     @kbanner()
     @bss_clear()

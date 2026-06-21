@@ -17,7 +17,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # System tunables.
 
-@cpu_mhz() -> u16 { return 16 }
+@cpu_mhz() -> u16 { return 8 }
 
 const NPROC: u8     = 3        # process slots: shell + 2
-const UART_UBRR: u16 = 103     # 16 MHz, 9600 baud
+const UART_UBRR: u16 = 51     # 8 MHz, 9600 baud

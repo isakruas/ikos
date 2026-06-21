@@ -29,14 +29,17 @@ const %SREG: u16 = 0x005F        # bit 7 (I) = global interrupt enable
     @sei()
 }
 
-# Prepare a fresh stack so the first switch into it returns at $entry. A return
-# address is a byte address; &@fn is a word address, hence *2. High byte sits at
-# the top of the stack. Stores the resulting stack pointer through $sp_slot.
+# Prepare a fresh stack so the first switch into it returns at $entry. On the
+# real AVR, RET pops a WORD address (the PC), and &@fn already yields that word
+# address, so push it as-is. High byte sits at the top of the stack. Stores the
+# resulting stack pointer through $sp_slot.
 @ctx_bootstrap($stack_top: u16, $sp_slot: u16, $entry: u16) {
-    ram imut $eb: u16 = $entry * 2
+    ram imut $eb: u16 = $entry
     ram ptr u8 $s = $stack_top
-    ($eb / 256) -> *$s
-    ($eb & 0xFF) -> *($s - 1)
+    # AVR RET reads the high byte from the LOWER stack address, so put the high
+    # byte just below the top and the low byte at the top.
+    ($eb & 0xFF) -> *$s
+    ($eb / 256) -> *($s - 1)
     ram ptr u16 $slot = $sp_slot
     $stack_top - 2 -> *$slot
 }

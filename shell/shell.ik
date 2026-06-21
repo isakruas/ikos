@@ -23,27 +23,44 @@
     @puts("$ ")
 }
 
+# Finish the current line: run it (only if non-empty) and show a fresh prompt.
+# An empty line just reprompts, so CR, LF and CRLF all submit cleanly without
+# running an empty command (which would print '?').
+# Finish the current line: run it (only if non-empty) and show a fresh prompt.
+# An empty line just reprompts, so CR, LF and CRLF all submit cleanly without
+# running an empty command (which would print '?').
+@_submit() {
+    ram ptr u8 $len = LINE_LEN
+    @nl()
+    ? *$len > 0 {
+        ram ptr u8 $buf = LINE_BUF
+        0 -> *($buf + *$len)
+        @cmd_exec(LINE_BUF)
+        0 -> *$len
+    }
+    @_prompt()
+}
+
 @_key($c: u8) {
     ram ptr u8 $len = LINE_LEN
-    switch $c {
-        13 -> {
-            @nl()
-            ram ptr u8 $buf = LINE_BUF
-            0 -> *($buf + *$len)
-            @cmd_exec(LINE_BUF)
-            0 -> *$len
-            @_prompt()
-            return
+    # Submit the line on carriage return (13) OR line feed (10).
+    ? $c == 13 {
+        @_submit()
+        return
+    }
+    ? $c == 10 {
+        @_submit()
+        return
+    }
+    # Backspace / delete.
+    ? $c == 8 {
+        ? *$len > 0 {
+            *$len - 1 -> *$len
+            @putc(8)
+            @putc(32)
+            @putc(8)
         }
-        8 -> {
-            ? *$len > 0 {
-                *$len - 1 -> *$len
-                @putc(8)
-                @putc(32)
-                @putc(8)
-            }
-            return
-        }
+        return
     }
     ? $c < 32 { return }
     ? *$len >= 62 { return }
