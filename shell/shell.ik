@@ -74,7 +74,8 @@
     @sei()
     ram ptr u8 $len = LINE_LEN
     0 -> *$len
-    @puts("\nikOS. type 'help'.\n")
+    @nl()
+    @cmd_run("init")          # run the editable /init boot script (banner + hooks)
     @_prompt()
     loop * {
         ram mut $c: u8 = 0

@@ -54,7 +54,7 @@ scheduler, which later resumes the caller right after the call.
 .. function:: @sys_sleep($ticks: u16)
 
    Mark the caller ``ST_SLEEPING`` with a wake tick ``$ticks`` in the future,
-   then yield. The scheduler returns it to ``ST_READY`` once ``uptime`` reaches
+   then yield. The scheduler returns it to ``ST_READY`` once ``up`` reaches
    that tick.
 
 .. function:: @sys_exit()
@@ -65,6 +65,6 @@ The Timer0 tick
 ===============
 
 The ``TIMER0_COMPA`` interrupt only increments the global tick counter (read by
-``uptime``) and, indirectly, lets the scheduler wake sleepers. It does not force
+``up``) and, indirectly, lets the scheduler wake sleepers. It does not force
 a context switch — cooperative scheduling means a process is never interrupted
 mid-computation against its will.

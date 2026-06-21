@@ -20,7 +20,6 @@ target atmega32
 import std/uart
 import std/conv
 import std/eeprom
-import std/gpio
 import std/spi
 import std/twi
 import std/adc
@@ -47,14 +46,23 @@ import shell/shell
     # (%WDT_STATUS_REG = MCUCSR on classic AVR), then disable via the std helper.
     %WDT_STATUS_REG & 0xF7 -> %WDT_STATUS_REG
     @wdt_disable()
-
+    # (SRAM is already zeroed by the compiler's crt0 before @main, so no
+    # explicit .bss clear is needed here.)
+    # @bss_clear()
     @uart_init(UART_UBRR)
     @kbanner()
-    @bss_clear()
     @sched_init()
     @timer_init()
     ? @fs_blank(DEV_ROOT) == 1 { @fs_format(DEV_ROOT) }
+    @_seed_init()
     @proc_start(0, &@shell_main)
+    # Arm the watchdog as a hang recovery net (~2 s). It is kicked once per
+    # scheduler iteration (@scheduler), so cooperative scheduling keeps it happy;
+    # if a process ever locks up without yielding, control never returns to the
+    # scheduler, the watchdog is not kicked, and the chip resets itself. Armed
+    # only now -- after the slow boot-time init (fs_format) -- so that init can
+    # never trip it.
+    @wdt_enable(0x07)
     @sei()
     @scheduler()
 }

@@ -47,7 +47,7 @@
 @nl() { @putc(10) }
 
 @kbanner() {
-    @puts("\nikOS v0.1.0-dev1\n(C) 2026 The ikOS Authors  GPL-3.0-or-later\n")
+    @puts("\nikOS 0.1.0 Sauva GPL-3.0+\n")
 }
 
 # Terse error reply (shared so command text stays out of SRAM).

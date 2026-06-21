@@ -56,7 +56,7 @@
     ram mut $done: u8 = 0
     loop 0..63 -> $k {
         ? $done == 0 {
-            ram imut $c: u8 = *($s + $si)
+            ram mut $c: u8 = *($s + $si)
             # Stop at end of string, or before a variable's decimal form (up to 5
             # digits) plus the NUL could run past EXPAND's 80 bytes into the mount table.
             ? $c == 0 { 1 -> $done }
@@ -73,6 +73,10 @@
                     @_putdec($d, $di, @var_get($v - 97)) -> $di
                     $si + 2 -> $si
                 } : {
+                    # Backslash-escape: "\$" emits a literal '$' (skip the '\'),
+                    # so a variable reference can be saved verbatim into a file and
+                    # expanded later, when the script line itself runs.
+                    ? $c == 92 { ? $v == 36 { 36 -> $c  $si + 1 -> $si } }
                     $c -> *($d + $di)
                     $di + 1 -> $di
                     $si + 1 -> $si
@@ -84,11 +88,13 @@
 }
 
 @_apply($op: u8, $a: u16, $b: u16) -> u16 {
-    ? $op == 45 { return $a - $b }
-    ? $op == 42 { return $a * $b }
-    ? $op == 47 {
-        ? $b == 0 { return 0 }
-        return $a / $b
+    switch $op {
+        45 -> { return $a - $b }
+        42 -> { return $a * $b }
+        47 -> {
+            ? $b == 0 { return 0 }
+            return $a / $b
+        }
     }
     return $a + $b
 }

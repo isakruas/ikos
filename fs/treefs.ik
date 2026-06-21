@@ -18,27 +18,39 @@
 # Hierarchical filesystem. The same tree layout runs on any block device; a
 # location is a packed (device, node) pair so paths can cross mount points.
 #
-#   node i (12 B): [0]=type(0 free,1 file,2 dir) [1]=parent [2..3]=len(u16)
-#                  [4..11]=name(8, NUL-padded)
-#   data block i:  start_offset + i * block_size
+#   node i (16 B): [0]=type(0 free,1 file,2 dir) [1]=parent [2..3]=len(u16)
+#                  [4..11]=name(8, NUL-padded) [12]=first cluster (0xFF = none)
 #
-# Geometry is dynamic based on device ID:
-#   - dev 0, 1 (internal partitions): Fits a 512-byte device (8 nodes, 50 B/file)
-#   - dev 2 (external I2C EEPROM): Scaled for larger storage (64 nodes, 256 B/file)
+# File data lives in a chain of fixed-size clusters allocated on demand from a
+# shared pool (a FAT-style allocator), so a file grows to whatever free space
+# allows instead of a fixed per-file slot. The internal volume (dev 0) lays out,
+# in order: node table, FAT (one next-pointer byte per cluster), data clusters.
+# FAT entry 0xFF = free cluster, 0xFE = last cluster of a file.
+#   - dev 0 (internal, 1024 B): 8 nodes, 16-byte clusters -> files up to ~832 B
+#   - dev 2 (external I2C EEPROM): 64 nodes, fixed 256-byte slots
 
-const FS_NODESZ:  u16 = 12
+const FS_NODESZ:  u16 = 16
 const FS_NAMELEN: u16 = 8
 const FS_FREE:    u8 = 0
 const FS_FILE:    u8 = 1
 const FS_DIR:     u8 = 2
+const FAT_FREE:   u8 = 0xFF   # cluster is unallocated
+const FAT_EOF:    u8 = 0xFE   # cluster is the last in a file's chain
 
-# Returns the maximum number of files/directories allowed on the device.
+# Maximum number of files/directories on the device.
 @fs_nnodes($dev: u8) -> u16 {
     switch $dev {
-        2 -> { return 64 } # External EEPROM: 64 nodes
-        * -> { return 8 }  # Internal partitions: 8 nodes
+        2 -> { return 64 }
+        * -> { return 8 }
     }
 }
+
+# Cluster-pool geometry for the internal FAT volume (dev 0). Node table is
+# 8*16 = 128 B; the FAT is one byte per cluster right after it; data follows.
+const FAT_CLSZ:   u16 = 16
+const FAT_NCLUST: u16 = 52
+const FAT_BASE:   u16 = 128
+const FAT_DATA:   u16 = 180
 
 # Packed location helpers: a u16 = device*256 + node.
 @loc($dev: u8, $node: u16) -> u16 { return ($dev * 256) + $node }
@@ -50,19 +62,6 @@ const FS_DIR:     u8 = 2
 @fs_type($dev: u8, $i: u16) -> u8 { return @blk_read($dev, $i * FS_NODESZ) }
 @fs_parent($dev: u8, $i: u16) -> u16 { return @blk_read($dev, ($i * FS_NODESZ) + 1) }
 @fs_name_byte($dev: u8, $i: u16, $j: u16) -> u8 { return @blk_read($dev, ($i * FS_NODESZ) + 4 + $j) }
-# Reads one byte from the file's data block at the given offset.
-# Resolves the geometry (start block and block size) dynamically based on dev.
-@fs_data_byte($dev: u8, $i: u16, $off: u16) -> u8 {
-    ram mut $start: u16 = 96
-    ram mut $block: u16 = 50
-    switch $dev {
-        2 -> {
-            768 -> $start
-            256 -> $block
-        }
-    }
-    return @blk_read($dev, $start + ($i * $block) + $off)
-}
 
 @fs_len($dev: u8, $i: u16) -> u16 {
     ram imut $b: u16 = @_nbase($i)
@@ -76,14 +75,100 @@ const FS_DIR:     u8 = 2
     @blk_write($dev, $b + 3, ($n / 256) & 0xFF)
 }
 
+# First cluster of a file's chain (byte 12); FAT_FREE means the file is empty.
+@_fclust($dev: u8, $i: u16) -> u8 { return @blk_read($dev, ($i * FS_NODESZ) + 12) }
+@_set_fclust($dev: u8, $i: u16, $v: u8) { @blk_write($dev, ($i * FS_NODESZ) + 12, $v) }
+
+# --- FAT (internal volume) -------------------------------------------------
+@_fat_get($dev: u8, $c: u16) -> u8 { return @blk_read($dev, FAT_BASE + $c) }
+@_fat_set($dev: u8, $c: u16, $v: u8) { @blk_write($dev, FAT_BASE + $c, $v) }
+
+# Grab a free cluster, tag it end-of-chain, and return it; 0xFFFF when full.
+@_clust_alloc($dev: u8) -> u16 {
+    loop 0..FAT_NCLUST -> $c {
+        ? @_fat_get($dev, $c) == FAT_FREE {
+            @_fat_set($dev, $c, FAT_EOF)
+            return $c
+        }
+    }
+    return 0xFFFF
+}
+
+# Walk $n links along a chain starting at cluster $first.
+@_clust_at($dev: u8, $first: u16, $n: u16) -> u16 {
+    ram mut $c: u16 = $first
+    loop 0..$n -> $k {
+        @_fat_get($dev, $c) -> $c
+    }
+    return $c
+}
+
+# Reads one byte of file $i at the given offset.
+@fs_data_byte($dev: u8, $i: u16, $off: u16) -> u8 {
+    ? $dev == 2 {
+        return @blk_read($dev, 1024 + ($i * 256) + $off)
+    }
+    ram imut $clsz: u16 = FAT_CLSZ
+    ram imut $ci: u16 = $off / $clsz
+    ram imut $co: u16 = $off - ($ci * $clsz)
+    ram imut $c: u16 = @_clust_at($dev, @_fclust($dev, $i), $ci)
+    return @blk_read($dev, FAT_DATA + ($c * $clsz) + $co)
+}
+
+# Appends a single byte $c to the end of file $i.
+@fs_append_byte($dev: u8, $i: u16, $c: u8) {
+    ram imut $len: u16 = @fs_len($dev, $i)
+    ? $dev == 2 {
+        ? $len < 256 {
+            @blk_write($dev, 1024 + ($i * 256) + $len, $c)
+            @_set_len($dev, $i, $len + 1)
+        }
+        return
+    }
+    ram imut $clsz: u16 = FAT_CLSZ
+    ram imut $ci: u16 = $len / $clsz
+    ram imut $co: u16 = $len - ($ci * $clsz)
+    ram mut $clust: u16 = 0
+    ? $co == 0 {
+        # Crossing into a new cluster: allocate one and link it in.
+        ram imut $new: u16 = @_clust_alloc($dev)
+        ? $new == 0xFFFF { return }
+        ? @_fclust($dev, $i) == FAT_FREE {
+            @_set_fclust($dev, $i, $new & 0xFF)
+        } : {
+            ram imut $prev: u16 = @_clust_at($dev, @_fclust($dev, $i), $ci - 1)
+            @_fat_set($dev, $prev, $new & 0xFF)
+        }
+        $new -> $clust
+    } : {
+        @_clust_at($dev, @_fclust($dev, $i), $ci) -> $clust
+    }
+    @blk_write($dev, FAT_DATA + ($clust * $clsz) + $co, $c)
+    @_set_len($dev, $i, $len + 1)
+}
+
 @fs_format($dev: u8) {
     ram imut $nnodes: u16 = @fs_nnodes($dev)
     loop 0..$nnodes -> $i {
-        @blk_write($dev, @_nbase($i), FS_FREE)
+        @blk_write($dev, $i * FS_NODESZ, FS_FREE)
+        # A full wipe is many slow (EEPROM/I2C) writes -- kick the watchdog so a
+        # large or external volume cannot trip the hang-recovery timeout. Harmless
+        # at boot, where the watchdog is not yet armed.
+        @wdr()
     }
-    @blk_write($dev, 1, 0)
-    @_set_len($dev, 0, 0)
-    @blk_write($dev, 4, 0)
+    # Mark every cluster of the internal volume's FAT free.
+    ? $dev != 2 {
+        loop 0..FAT_NCLUST -> $c {
+            @_fat_set($dev, $c, FAT_FREE)
+            @wdr()
+        }
+    }
+    # Fully clear the root node (all 16 bytes incl. the name) and make it an empty
+    # directory with no data chain.
+    loop 0..FS_NODESZ -> $k {
+        @blk_write($dev, $k, 0)
+    }
+    @_set_fclust($dev, 0, FAT_FREE)
     @blk_write($dev, 0, FS_DIR)
 }
 
@@ -161,6 +246,7 @@ const FS_DIR:     u8 = 2
         @blk_write($dev, $b + 4 + $j, *($nb + $j))
     }
     @_set_len($dev, $n, 0)
+    @_set_fclust($dev, $n, FAT_FREE)
     @blk_write($dev, $b, $type)
     return $n
 }
@@ -249,22 +335,29 @@ const FS_DIR:     u8 = 2
     return $cur
 }
 
-
-# Appends a single byte $c to the end of file $i on device $dev.
-@fs_append_byte($dev: u8, $i: u16, $c: u8) {
-    ram imut $len: u16 = @fs_len($dev, $i)
-    ram mut $block: u16 = 50
-    ram mut $start: u16 = 96
-    switch $dev {
-        2 -> {
-            256 -> $block
-            768 -> $start
+# Return file $i's cluster chain to the free pool and mark it empty (internal
+# volume only; the I2C volume uses fixed slots with no chain).
+@_free_chain($dev: u8, $i: u16) {
+    ? $dev == 2 { return }
+    ram mut $c: u16 = @_fclust($dev, $i)
+    ram mut $go: u8 = 1
+    ? $c == FAT_FREE { 0 -> $go }
+    loop 0..FAT_NCLUST -> $step {
+        ? $go == 1 {
+            ram imut $next: u8 = @_fat_get($dev, $c)
+            @_fat_set($dev, $c, FAT_FREE)
+            ? $next == FAT_EOF { 0 -> $go } : { $next -> $c }
         }
     }
-    ? $len < $block {
-        @blk_write($dev, $start + ($i * $block) + $len, $c)
-        @_set_len($dev, $i, $len + 1)
-    }
+    @_set_fclust($dev, $i, FAT_FREE)
+}
+
+# Truncate file $i to zero length, returning its data to the pool. Needed by '>'
+# overwrite: just zeroing the length would orphan the old clusters and leave the
+# next append linking onto stale chain state.
+@fs_truncate($dev: u8, $i: u16) {
+    @_free_chain($dev, $i)
+    @_set_len($dev, $i, 0)
 }
 
 @fs_delete($dev: u8, $i: u16) -> u8 {
@@ -274,6 +367,7 @@ const FS_DIR:     u8 = 2
             ? @fs_is_child($dev, $k, $i) == 1 { return 0 }
         }
     }
+    @_free_chain($dev, $i)
     @blk_write($dev, @_nbase($i), FS_FREE)
     return 1
 }

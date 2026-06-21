@@ -36,8 +36,8 @@ run:
 test:
 	docker run --rm -v "$(CURDIR):/ikos" -w /ikos rust:latest \
 	  bash -c "export PATH=/usr/local/cargo/bin:\$$PATH; \
-	    cargo build --manifest-path $(IKIDE)/Cargo.toml --bin ikide; rc=\$$?; \
-	    if [ \$$rc -eq 0 ]; then $(IKIDE)/target/debug/ikide test . ; rc=\$$?; fi; \
+	    cargo build --release --manifest-path $(IKIDE)/Cargo.toml --bin ikide; rc=\$$?; \
+	    if [ \$$rc -eq 0 ]; then $(IKIDE)/target/release/ikide test . ; rc=\$$?; fi; \
 	    chown -R \$$(id -u):\$$(id -g) $(IKIDE)/target 2>/dev/null || true; \
 	    exit \$$rc"
 

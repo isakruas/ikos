@@ -9,7 +9,7 @@ copyright = "2026, The ikOS Authors"
 author = "The ikOS Authors"
 
 language = "en"
-release = "0.1.0-dev1"
+release = "0.1.0"
 version = "0.1"
 
 # -- General configuration ---------------------------------------------------
@@ -33,7 +33,7 @@ primary_domain = "ik"
 templates_path = ["_templates"]
 exclude_patterns = []
 
-html_short_title = "ikOS 0.1.0-dev1 documentation"
+html_short_title = "ikOS 0.1.0 documentation"
 
 # Never fail the build on a missing cross-reference while the manual is written.
 nitpicky = False

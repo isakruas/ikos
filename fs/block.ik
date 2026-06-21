@@ -17,17 +17,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Block-storage layer. A filesystem addresses bytes within a device; the device
 # id selects the backend:
-#   0  on-chip EEPROM, low half   (the root filesystem)
-#   1  on-chip EEPROM, high half  (a second mountable filesystem)
+#   0  on-chip EEPROM (the root filesystem, uses the whole 1 KB)
 #   2  external I2C EEPROM (24Cxx) at 0x50  (validated on real hardware)
-#
-# Devices 0 and 1 are two 512-byte partitions of the same on-chip EEPROM, so
-# mounting is exercisable without extra hardware.
 
 const DEV_ROOT: u8  = 0
-const DEV_ALT:  u8  = 1
 const DEV_I2C:  u8  = 2
-const PART_SIZE: u16 = 0x200
+const PART_SIZE: u16 = 0x400
 const I2C_ADDR:  u8  = 0x50
 
 @_i2c_start_addr($addr: u16) {

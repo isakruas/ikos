@@ -4,9 +4,8 @@ Drivers
 
 Device access is split between a console driver (``drivers/serial.ik``) and the
 serial-bus commands (``drivers/bus.ik``). The kernel uses the ik8b standard
-library (``std/uart``, ``std/spi``, ``std/twi``, ``std/eeprom``, ``std/gpio``,
-``std/conv``) for the register-level primitives and adds thin shell-facing
-wrappers.
+library (``std/uart``, ``std/spi``, ``std/twi``, ``std/eeprom``, ``std/conv``)
+for the register-level primitives and adds thin shell-facing wrappers.
 
 Console (UART)
 ==============
@@ -35,9 +34,12 @@ build on it.
 GPIO, SPI, I2C
 ==============
 
-The ``pin``, ``spi``, and ``i2c`` commands wrap ``std/gpio``, ``std/spi``, and
-``std/twi``. SPI is initialised in master mode on first use; the I2C commands
-drive a single read or write transaction against a 7-bit address.
+GPIO is done straight from the shell with ``sbi`` / ``cbi`` (single-bit
+read-modify-write) and ``poke`` / ``peek`` on the port registers, so no GPIO
+driver is needed (see :doc:`/reference/config` for the register map). The
+``spi`` and ``i2c`` commands wrap ``std/spi`` and ``std/twi``: SPI is initialised
+in master mode on first use; the I2C commands drive a single read or write
+transaction against a 7-bit address.
 
 ADC
 ===

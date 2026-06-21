@@ -84,6 +84,11 @@
     ram ptr u8 $st  = PROC_STATE
     ram ptr u8 $cur = CUR_PROC
     loop * {
+        # Kick the watchdog every scheduler pass. As long as control keeps coming
+        # back here (normal cooperative scheduling, including the idle @sleep that
+        # the timer tick wakes), the chip stays alive; a process that hangs without
+        # yielding never lets us reach this, so the watchdog resets the board.
+        @wdt_reset()
         ram mut $any_ready: u8 = 0
         loop 0..NPROC -> $i {
             ram ptr u8 $sp_state = $st + $i

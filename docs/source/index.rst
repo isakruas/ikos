@@ -11,7 +11,7 @@ commands for files, processes, memory, GPIO, and the serial buses
 
 It targets the ``atmega32`` and ``atmega328p`` out of the box and fits in
 32 KB of flash with a few hundred bytes of SRAM. Scheduling is **cooperative**:
-each process runs until it yields, and a Timer0 tick drives ``uptime`` and timed
+each process runs until it yields, and a Timer0 tick drives ``up`` and timed
 sleeps. ikOS is not a hard real-time OS — there is no preemption or priority
 scheduling.
 
@@ -43,17 +43,14 @@ work. Small, collaborative, capable — that is Iki.
 
 .. code-block:: text
 
-   ikOS v0.1.0-dev1
-   (C) 2026 The ikOS Authors  GPL-3.0-or-later
-
-   ikOS. type 'help'.
-   $ mkdir etc
-   $ cd etc
-   $ echo hello >> motd
-   $ cat motd
+   ikOS 0.1.0 Sauva GPL-3.0+
+   /$ mkd etc
+   /$ cd etc
+   /$ say hello >> motd
+   /$ cat motd
    hello
-   $ cd /
-   $ tree
+   /$ cd /
+   /$ ls
    /
    `-- etc/
        `-- motd

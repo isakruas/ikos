@@ -6,7 +6,8 @@ Glossary
 
    block device
       A flat, byte-addressable backing store the filesystem runs on. ikOS has
-      three: two on-chip EEPROM partitions and one external I2C EEPROM.
+      two: device 0, the whole on-chip EEPROM (the root filesystem), and
+      device 2, an external I2C EEPROM.
 
    cooperative scheduling
       A process keeps the CPU until it voluntarily yields (waits for input,
@@ -23,7 +24,7 @@ Glossary
 
    node
       A fixed-size filesystem record: a file or a directory. A device has a
-      fixed number of nodes (8 on an internal partition, 64 on the external
+      fixed number of nodes (8 on the on-chip device, 64 on the external
       EEPROM).
 
    process slot
@@ -35,7 +36,7 @@ Glossary
       (append) instead of to the UART.
 
    tick
-      One Timer0 compare-match interrupt. Ticks drive ``uptime`` and time-based
+      One Timer0 compare-match interrupt. Ticks drive ``up`` and time-based
       sleeps; they do not preempt.
 
    yield

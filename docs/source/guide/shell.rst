@@ -8,16 +8,13 @@ UART:
 
 .. code-block:: text
 
-   ikOS v0.1.0-dev1
-   (C) 2026 The ikOS Authors  GPL-3.0-or-later
-
-   ikOS. type 'help'.
-   $
+   ikOS 0.1.0 Sauva GPL-3.0+
+   /$
 
 The shell is process 0. It reads a line, runs it, and prints the prompt again.
 While waiting for input it yields the CPU so other processes run (see
-:doc:`processes`). ``help`` lists every command; the full set is in
-:doc:`/reference/index`.
+:doc:`processes`). At boot it also runs the ``/init`` script, which is where you
+customise startup. The full command set is in :doc:`/reference/index`.
 
 Line editing
 ============
@@ -34,16 +31,19 @@ Path arguments may be relative or absolute and accept ``.`` and ``..``.
 
 .. code-block:: text
 
-   $ mkdir etc
+   $ mkd etc
    $ cd etc
    $ pwd
    /etc
    $ new motd
    $ cd /
    $ ls
-   etc/
+   /
+   `-- etc/
+       `-- motd
 
-Directories list with a trailing ``/``; files list with their byte length.
+``ls`` lists a directory and everything under it as a tree; directories show a
+trailing ``/``.
 
 Writing files: redirection
 ===========================
@@ -55,17 +55,17 @@ volume):
 
 .. code-block:: text
 
-   $ echo hello >> motd      # create/append
+   $ say hello >> motd      # create/append
    $ cat motd
    hello
-   $ echo world > motd       # overwrite
+   $ say world > motd       # overwrite
    $ cat motd
    world
 
-``tree``
-========
+Tree connectors
+===============
 
-``tree`` draws the same connectors as the Unix ``tree`` (ASCII charset):
+``ls`` draws the same connectors as the Unix ``tree`` command (ASCII charset):
 
 .. code-block:: text
 
@@ -74,13 +74,6 @@ volume):
    |        continue an ancestor column
    (blank)  close an ancestor column
 
-.. code-block:: text
-
-   $ tree
-   /
-   `-- etc/
-       `-- motd
-
 Hardware from the shell
 =======================
 
@@ -88,7 +81,8 @@ The serial buses and GPIO are reachable directly:
 
 .. code-block:: text
 
-   $ pin b5 1          # drive PORTB5 high
+   $ sbi 0x37 5        # DDRB bit5 = output
+   $ sbi 0x38 5        # drive PB5 high (cbi 0x38 5 to drive it low)
    $ spi 41            # full-duplex SPI transfer of 0x41, prints the byte read back
    $ i2c w 50 0a       # write 0x0A to I2C device 0x50
    $ i2c r 50          # read one byte from 0x50

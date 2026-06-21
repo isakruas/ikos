@@ -77,8 +77,27 @@
     return *$cw
 }
 
-@cmd_help() {
-    @puts("cmds: ls cd pwd cat tree mkdir new rm cp mv run mount umount pin ps echo peek poke kill spi i2c adc set if repeat uptime mem\n")
+# Append a NUL-terminated string to file $node on the root device, byte by byte.
+@_append_str($node: u16, $s: str ram) {
+    ram ptr u8 $p = $s
+    ram mut $i: u16 = 0
+    loop * {
+        ram imut $c: u8 = *($p + $i)
+        ? $c == 0 { return }
+        @fs_append_byte(DEV_ROOT, $node, $c)
+        $i + 1 -> $i
+    }
+}
+
+# Create the /init boot script with a default line if it is missing. The shell
+# runs /init at every start, so editing it on the EEPROM customises the startup
+# output and can run any commands. Each line is run through the script runner.
+@_seed_init() {
+    ? @fs_resolve("init", 0) != 0xFFFF { return }
+    ram imut $n: u16 = @fs_mknode(DEV_ROOT, 0, "init", FS_FILE)
+    ? $n == 0xFFFF { return }
+    #@_append_str($n, "say ls cd pwd cat mkd new rm cp mv run fmt mnt umnt\n")
+    #@_append_str($n, "say ps say peek poke kill spi i2c adc set if rep up cls\n")
 }
 
 @cmd_ps() {
@@ -104,20 +123,9 @@
     @nl()
 }
 
-@cmd_mem() {
-    ram ptr u8 $st = PROC_STATE
-    ram mut $n: u16 = 0
-    loop 0..NPROC -> $i {
-        ? *($st + $i) != ST_UNUSED { $n + 1 -> $n }
-    }
-    @puts("P: ")
-    @putc($n + 48)
-    @puts("/3\n")
-}
-
 @cmd_clear() { @puts("\x1b[2J\x1b[H") }
 
-@cmd_echo($arg: u16) {
+@cmd_say($arg: u16) {
     ? $arg != 0 {
         ram ptr u8 $a = $arg
         @puts($a)
@@ -161,29 +169,6 @@
     ? $loc == 0xFFFF { @eperr() return }
     ? @fs_type(@loc_dev($loc), @loc_node($loc)) != FS_DIR { @eperr() return }
     $loc -> *$cw
-}
-
-@_entry($dev: u8, $i: u16) {
-    @_pname($dev, $i)
-    ? @fs_type($dev, $i) == FS_DIR { @putc(47) } : {
-        @puts("  ")
-        @put_u16(@fs_len($dev, $i))
-    }
-    @nl()
-}
-@_list($dev: u8, $dir: u16) {
-    ram imut $nnodes: u16 = @fs_nnodes($dev)
-    loop 0..$nnodes -> $i {
-        ? @fs_is_child($dev, $i, $dir) == 1 { @_entry($dev, $i) }
-    }
-}
-@cmd_ls($arg: u16) {
-    ram mut $loc: u16 = @_cwd()
-    ? $arg != 0 {
-        @fs_resolve($arg, @_cwd()) -> $loc
-        ? $loc == 0xFFFF { @eperr() return }
-    }
-    @_list(@loc_dev($loc), @loc_node($loc))
 }
 
 @_resolve_parent($path: u16, $parent_loc_out: ptr ram u16) -> u16 {
@@ -237,12 +222,48 @@
     @nl()
 }
 
+# Delete $node and its whole subtree (depth-first): children first, so each dir
+# is empty by the time @fs_delete reaches it. fs_delete only marks nodes FS_FREE
+# (no index shifting), so the scan stays valid while we recurse.
+@_rm_tree($dev: u8, $node: u16, $depth: u16) {
+    # Bound recursion to the same 14-level limit @_tree uses, so a deep tree
+    # cannot overflow the small (288 B) shell stack -- especially since the
+    # timer ISR may nest its frame on top mid-recursion.
+    ? $depth < 14 {
+        ram imut $nnodes: u16 = @fs_nnodes($dev)
+        loop 0..$nnodes -> $i {
+            ? @fs_is_child($dev, $i, $node) == 1 { @_rm_tree($dev, $i, $depth + 1) }
+        }
+    }
+    @fs_delete($dev, $node)
+}
+
 @cmd_rm($arg: u16) {
     ? $arg == 0 { @eperr() return }
+    ram ptr u8 $a = $arg
+    ram mut $len: u16 = 0
+    loop 0..64 -> $k {
+        ? *($a + $k) == 0 { 64 -> $k } : { $k + 1 -> $len }
+    }
+    # "dir/*", "/*" or "*": drop the trailing '*' and wipe the directory's
+    # whole contents recursively, leaving the directory itself in place.
+    ? $len > 0 {
+        ? *($a + ($len - 1)) == 42 {
+            0 -> *($a + ($len - 1))
+            ram imut $d: u16 = @fs_resolve($arg, @_cwd())
+            ? $d == 0xFFFF { @eperr() return }
+            ram imut $dv: u8 = @loc_dev($d)
+            ram imut $dn: u16 = @loc_node($d)
+            loop 0..@fs_nnodes($dv) -> $i {
+                ? @fs_is_child($dv, $i, $dn) == 1 { @_rm_tree($dv, $i, 1) }
+            }
+            return
+        }
+    }
     ram imut $loc: u16 = @fs_resolve($arg, @_cwd())
     ? $loc == 0xFFFF { @eperr() return }
     ? @loc_node($loc) == 0 { @eperr() return }
-    ? @fs_delete(@loc_dev($loc), @loc_node($loc)) == 1 { } : { @eperr() }
+    @_rm_tree(@loc_dev($loc), @loc_node($loc), 0)
 }
 
 # Copy file ($sd:$sn) into directory ($dd:$dn), keeping its name. Crosses devices
@@ -316,7 +337,7 @@
 
 # Print one node and its subtree. The prefix columns are drawn from the per-depth
 # "last child" flags: an ancestor that was a last child gets blank space, others
-# get a continuing vertical bar -- the same layout `tree` produces.
+# get a continuing vertical bar.
 @_tree($dev: u8, $n: u16, $depth: u16, $is_last: u8) {
     ? $depth > 0 {
         ram ptr u8 $tl = TREE_LAST
@@ -360,12 +381,31 @@
         }
     }
 }
-@cmd_tree() {
-    ram imut $loc: u16 = @_cwd()
+# ls [path]   list a directory and everything under it.
+@cmd_ls($arg: u16) {
+    ram mut $loc: u16 = @_cwd()
+    ? $arg != 0 {
+        @fs_resolve($arg, @_cwd()) -> $loc
+        ? $loc == 0xFFFF { @eperr() return }
+    }
     @_tree(@loc_dev($loc), @loc_node($loc), 0, 1)
 }
 
-# mount <dev> <path>   redirect directory <path> to device <dev> (formats if blank)
+# fmt [dev]   wipe a filesystem and re-create an empty root. No argument formats
+# the internal EEPROM (DEV_ROOT); `fmt 1`/`fmt 2` format another on-chip or the
+# external I2C volume. Use it to clear stale data from the (non-volatile) storage.
+@cmd_fmt($arg: u16) {
+    ram mut $dev: u8 = DEV_ROOT
+    ? $arg != 0 { @atoi($arg) & 0xFF -> $dev }
+    @fs_format($dev)
+    ? $dev == DEV_ROOT {
+        ram ptr u16 $cw = CWD_LOC
+        0 -> *$cw
+        @_seed_init()
+    }
+}
+
+# mnt <dev> <path>   redirect directory <path> to device <dev> (formats if blank)
 @cmd_mount($arg: u16) {
     ? $arg == 0 { @eperr() return }
     ram imut $pa: u16 = @_split($arg)
@@ -447,29 +487,29 @@
     ram ptr u8 $m = $addr
     ($val & 0xFF) -> *$m
 }
-@cmd_pin($arg: u16) {
-    ram imut $varg: u16 = @_split($arg)
-    ? $varg == 0 { @eperr() return }
-    ram ptr u8 $a = $arg
-    ram imut $pin: u8 = *($a + 1) - 48
-    ram imut $val: u8 = *($varg) - 48
-    ram imut $port: u8 = *$a
-    switch $port {
-        98 -> {
-            @pin_mode_b($pin, 1)
-            @digital_write_b($pin, $val)
-        }
-        99 -> {
-            @pin_mode_c($pin, 1)
-            @digital_write_c($pin, $val)
-        }
-        100 -> {
-            @pin_mode_d($pin, 1)
-            @digital_write_d($pin, $val)
-        }
-    }
-}
 
+# sbi/cbi <addr> <bit>   set or clear a single bit of the byte at <addr> via
+# read-modify-write, so the other 7 bits are preserved (e.g. drive one GPIO pin
+# without disturbing the rest of the port). <addr> is hex, <bit> is 0..7.
+@_setclr($arg: u16, $set: u8) {
+    ram imut $barg: u16 = @_split($arg)
+    ? $barg == 0 { @eperr() return }
+    ram imut $addr: u16 = @_hex16($arg)
+    ram imut $bit: u16 = @_hex16($barg)
+    ram mut $mask: u8 = 1
+    loop 0..$bit -> $i { $mask * 2 -> $mask }
+    ram ptr u8 $m = $addr
+    ? $set == 1 { *$m | $mask -> *$m } : { *$m & ~$mask -> *$m }
+}
+@cmd_sbi($arg: u16) { @_setclr($arg, 1) }
+@cmd_cbi($arg: u16) { @_setclr($arg, 0) }
+
+# slp <ticks>   sleep this (shell) process for <ticks> timer ticks, yielding the
+# CPU to other processes meanwhile.
+@cmd_slp($arg: u16) {
+    ? $arg == 0 { @eperr() return }
+    @sys_sleep(@atoi($arg))
+}
 @cmd_kill($arg: u16) {
     ? $arg == 0 { @eperr() return }
     ram imut $pid: u16 = @atoi($arg)
@@ -584,7 +624,7 @@
 
         # For '>' overwrite redirection, truncate file to 0 length
         ? $redir_mode == 1 {
-            @_set_len(@loc_dev($loc), @loc_node($loc), 0)
+            @fs_truncate(@loc_dev($loc), @loc_node($loc))
         }
 
         # Set redirection globals
@@ -608,34 +648,34 @@
     ram imut $raw: u16 = @_split($line)
     ? @_streq($cmd, "set") == 1 { @cmd_set($raw) return }
     ? @_streq($cmd, "if") == 1 { @cmd_if($raw) return }
-    ? @_streq($cmd, "repeat") == 1 { @cmd_repeat($raw) return }
+    ? @_streq($cmd, "rep") == 1 { @cmd_repeat($raw) return }
     ram mut $arg: u16 = 0
     ? $raw != 0 {
         @_expand($raw, EXPAND)
         EXPAND -> $arg
     }
-    ? @_streq($cmd, "help") == 1 { @cmd_help() return }
     ? @_streq($cmd, "ps") == 1 { @cmd_ps() return }
-    ? @_streq($cmd, "uptime") == 1 { @cmd_uptime() return }
-    ? @_streq($cmd, "mem") == 1 { @cmd_mem() return }
-    ? @_streq($cmd, "clear") == 1 { @cmd_clear() return }
-    ? @_streq($cmd, "echo") == 1 { @cmd_echo($arg) return }
+    ? @_streq($cmd, "up") == 1 { @cmd_uptime() return }
+    ? @_streq($cmd, "cls") == 1 { @cmd_clear() return }
+    ? @_streq($cmd, "say") == 1 { @cmd_say($arg) return }
     ? @_streq($cmd, "pwd") == 1 { @cmd_pwd() return }
     ? @_streq($cmd, "cd") == 1 { @cmd_cd($arg) return }
     ? @_streq($cmd, "ls") == 1 { @cmd_ls($arg) return }
-    ? @_streq($cmd, "tree") == 1 { @cmd_tree() return }
-    ? @_streq($cmd, "mkdir") == 1 { @cmd_mkdir($arg) return }
+    ? @_streq($cmd, "mkd") == 1 { @cmd_mkdir($arg) return }
     ? @_streq($cmd, "new") == 1 { @cmd_new($arg) return }
     ? @_streq($cmd, "cat") == 1 { @cmd_cat($arg) return }
     ? @_streq($cmd, "rm") == 1 { @cmd_rm($arg) return }
     ? @_streq($cmd, "cp") == 1 { @cmd_cp($arg) return }
     ? @_streq($cmd, "mv") == 1 { @cmd_mv($arg) return }
-    ? @_streq($cmd, "mount") == 1 { @cmd_mount($arg) return }
-    ? @_streq($cmd, "umount") == 1 { @cmd_umount($arg) return }
+    ? @_streq($cmd, "fmt") == 1 { @cmd_fmt($arg) return }
+    ? @_streq($cmd, "mnt") == 1 { @cmd_mount($arg) return }
+    ? @_streq($cmd, "umnt") == 1 { @cmd_umount($arg) return }
     ? @_streq($cmd, "run") == 1 { @cmd_run($arg) return }
     ? @_streq($cmd, "peek") == 1 { @cmd_peek($arg) return }
     ? @_streq($cmd, "poke") == 1 { @cmd_poke($arg) return }
-    ? @_streq($cmd, "pin") == 1 { @cmd_pin($arg) return }
+    ? @_streq($cmd, "sbi") == 1 { @cmd_sbi($arg) return }
+    ? @_streq($cmd, "cbi") == 1 { @cmd_cbi($arg) return }
+    ? @_streq($cmd, "slp") == 1 { @cmd_slp($arg) return }
     ? @_streq($cmd, "spi") == 1 { @cmd_spi($arg) return }
     ? @_streq($cmd, "i2c") == 1 { @cmd_i2c($arg) return }
     ? @_streq($cmd, "adc") == 1 { @cmd_adc($arg) return }
